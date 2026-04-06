@@ -153,5 +153,92 @@ if equip_type_code == "HP":
             st.success(f"Successfully updated and committed {success_count} equipment items.")
             st.rerun() # Refresh to clear checkmarks and show updated data
 
+# ... (Keep existing imports and Hopper code above) ...
+
 elif equip_type_code == "PU":
-    st.info("🚧 Pump bulk sizing module under development...")
+    st.subheader("Bulk Pump Process Mapping & Sizing")
+    
+    df_pumps = df_equip[df_equip['Type'] == 'PU'].copy()
+    if df_pumps.empty:
+        st.info("No pumps found in the Equipment List.")
+        st.stop()
+
+    # Define Process Property Links
+    col_flow = next((c for c in df_mb.columns if 'Slurry (m³/h)' in str(c)), None)
+    col_dens = next((c for c in df_mb.columns if 'Slurry Density (t/m3)' in str(c) or 'Density' in str(c)), None)
+    
+    if not col_flow or not col_dens:
+        st.error("Missing Slurry (m³/h) or Density (t/m3) in Mass Balance.")
+        st.stop()
+
+    stream_options = [f"{idx} | {row['Stream_Name']}" for idx, row in df_mb.iterrows()]
+    
+    grid_data = []
+    for _, row in df_pumps.iterrows():
+        tag = row['Tag']
+        desc = (row.get('Title', '') or row.get('Description', '')).lower()
+        
+        # Load Persistence
+        state = data_manager.load_equipment_state(tag)
+        
+        # --- AUTO-DETECTION LOGIC ---
+        # Default Flags based on Keywords in Title
+        d_pump_type = "Horizontal"
+        if "sump" in desc or "vertical" in desc: d_pump_type = "Sump"
+        
+        d_sub_type = "Centrifugal"
+        if "dosing" in desc or "metering" in desc: d_sub_type = "Dosing"
+        elif "hose" in desc or "peristaltic" in desc: d_sub_type = "Hose"
+        elif "aodd" in desc or "diaphragm" in desc: d_sub_type = "AODD"
+        
+        d_slurry = True
+        if "water" in desc or "solution" in desc or "reagent" in desc: d_slurry = False
+
+        # Apply state if exists, otherwise use auto-detected defaults
+        grid_data.append({
+            "Update?": False,
+            "Tag": tag,
+            "Title/Desc": row.get('Title', ''),
+            "Feed Stream": state.get('mapped_stream_ui', stream_options[0]),
+            "TDH (m)": state.get('manual_inputs', {}).get('tdh_m', 25.0),
+            "Type": state.get('manual_inputs', {}).get('pump_type', d_pump_type),
+            "Sub-Type": state.get('manual_inputs', {}).get('sub_type', d_sub_type),
+            "Slurry?": state.get('manual_inputs', {}).get('is_slurry', d_slurry)
+        })
+
+    edited_pumps = st.data_editor(
+        pd.DataFrame(grid_data),
+        column_config={
+            "Tag": st.column_config.TextColumn("Tag", disabled=True),
+            "Feed Stream": st.column_config.SelectboxColumn("Feed Stream", options=stream_options),
+            "Type": st.column_config.SelectboxColumn("Type", options=["Horizontal", "Sump", "Vertical"]),
+            "Sub-Type": st.column_config.SelectboxColumn("Sub-Type", options=["Centrifugal", "Dosing", "Hose", "AODD"]),
+            "TDH (m)": st.column_config.NumberColumn("TDH (m)", min_value=1, step=5)
+        },
+        hide_index=True, use_container_width=True
+    )
+
+    if st.button("🚀 Process Pump Updates"):
+        from calculations import pump_pu
+        to_update = edited_pumps[edited_pumps['Update?'] == True]
+        
+        for _, row in to_update.iterrows():
+            stream_no = row['Feed Stream'].split(" | ")[0]
+            proc_data = {
+                'flow_m3h': df_mb.loc[stream_no, col_flow],
+                'density_tm3': df_mb.loc[stream_no, col_dens]
+            }
+            m_inputs = {
+                'tdh_m': row['TDH (m)'],
+                'pump_type': row['Type'],
+                'sub_type': row['Sub-Type'],
+                'is_slurry': row['Slurry?']
+            }
+            
+            res = pump_pu.calculate(row['Tag'], proc_data, m_inputs)
+            res['mapped_stream_ui'] = row['Feed Stream']
+            res['manual_inputs'] = m_inputs
+            data_manager.save_equipment_sizing(row['Tag'], res)
+            
+        st.success("Pumps Sized!")
+        st.rerun()
