@@ -151,11 +151,30 @@ if type_code == "TH":
                 settle = st.number_input("Settling Rate (m/h)", value=mi.get('settling_rate', 3.0), step=0.1, key=f"sr_{tag}")
                 round_val = st.selectbox("Round up to nearest (m)", [1.0, 2.5, 5.0], index=1, key=f"rd_{tag}")
 
-            with col_stats:
+           with col_stats:
                 st.write("**Mass Balance Verification**")
                 f_num = s_feed.split(" | ")[0]
                 o_num = s_oflow.split(" | ")[0]
                 u_num = s_uflow.split(" | ")[0]
+                
+                # Helper function to grab a single float and avoid 'Series' mess
+                def get_val(s_num, col):
+                    val = df_mb.loc[s_num, col]
+                    if isinstance(val, pd.Series):
+                        return val.iloc[0] # Just take the first occurrence
+                    return val
+
+                try:
+                    summary_df = pd.DataFrame({
+                        "Property": ["Solids (t/h)", "Volume (m³/h)"],
+                        "Feed": [get_val(f_num, col_solids), get_val(f_num, col_slurry_vol)],
+                        "Overflow": [get_val(o_num, col_solids), get_val(o_num, col_slurry_vol)],
+                        "Underflow": [get_val(u_num, col_solids), get_val(u_num, col_slurry_vol)]
+                    })
+                    # Format for clean display
+                    st.table(summary_df.style.format(precision=2))
+                except Exception:
+                    st.warning("Select valid streams to view mass balance data.")
                 
                 # --- SAFE TABLE BUILD ---
                 try:
