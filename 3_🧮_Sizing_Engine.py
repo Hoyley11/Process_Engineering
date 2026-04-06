@@ -3,7 +3,48 @@ import pandas as pd
 # Dynamically import your calculation modules
 from calculations import hopper_hp, pump_pu 
 
-st.title("Sizing Engine")
+st.set_page_config(page_title="Sizing Engine", layout="wide")
+
+st.title("🧮 Equipment Sizing Engine")
+st.markdown("Select equipment, map process streams, and execute sizing models.")
+
+# 1. Top Section: Equipment Selection
+st.subheader("1. Equipment Configuration")
+col_tag, col_type = st.columns(2)
+with col_tag:
+    equip_tag = st.text_input("Equipment Tag", "107780-HP-001")
+with col_type:
+    # We will eventually auto-detect this, but good for structure now
+    equip_type = st.selectbox("Equipment Type", ["Hopper (HP)", "Pump (PU)"])
+
+st.markdown("---")
+
+# 2. Split Screen: Inputs vs Results
+col_left, col_right = st.columns([0.35, 0.65])
+
+with col_left:
+    st.subheader("2. Process Mapping")
+    feed_stream = st.text_input("SysCAD Feed Stream #")
+    
+    with st.expander("Process Overrides"):
+        fvf = st.number_input("Froth Volume Factor", value=1.5)
+        
+    st.button("Execute Sizing Model", type="primary") # Primary makes it blue/bold
+
+with col_right:
+    st.subheader("3. Execution Results")
+    
+    # Using tabs to organize the heavy output
+    tab_summary, tab_mto, tab_sketch = st.tabs(["3-Line Summary", "Material Take-Off", "Geometry Sketch"])
+    
+    with tab_summary:
+        st.info("Awaiting execution...") # Placeholder before they hit the button
+    
+    with tab_mto:
+        st.write("MTO details will appear here.")
+        
+    with tab_sketch:
+        st.write("Matplotlib sketch will render here.")
 
 # 1. Select Equipment to Size
 st.subheader("Select Equipment")
