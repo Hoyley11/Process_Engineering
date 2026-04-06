@@ -27,7 +27,7 @@ category_map = {
     "Pumps (PU)": "PU"
 }
 category = st.selectbox("Select Equipment Category to Size:", list(category_map.keys()))
-equip_type_code = category_map[category]
+type_code = category_map[category]
 
 st.markdown("---")
 
