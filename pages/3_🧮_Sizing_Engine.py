@@ -13,7 +13,14 @@ if df_mb.empty or df_equip.empty:
     st.warning("Please ensure Mass Balance (Page 1) and Equipment List (Page 2) are loaded.")
     st.stop()
 
-category_map = {"Hoppers (HP)": "HP", "Pumps (PU)": "PU"}
+category_map = {
+    "Hoppers (HP)": "HP", 
+    "Pumps (PU)": "PU", 
+    "Thickeners (TH)": "TH",
+    "Flotation Cells (FC)": "FC"
+}
+category = st.selectbox("Select Equipment Category to Size:", list(category_map.keys()))
+equip_type_code = category_map[category]
 category = st.selectbox("Category", list(category_map.keys()))
 type_code = category_map[category]
 
@@ -86,10 +93,10 @@ if type_code == "PU":
         st.success("Calculations complete!")
         st.rerun()
 
-elif equip_type_code == "TK":
+elif equip_type_code == "TH":
     st.subheader("Nuanced Thickener Sizing (Unit-by-Unit)")
     
-    df_thickeners = df_equip[df_equip['Type'] == 'TK'].copy()
+    df_thickeners = df_equip[df_equip['Type'] == 'TH'].copy()
     
     # We create a column for each thickener tag
     tabs = st.tabs(df_thickeners['Tag'].tolist())
