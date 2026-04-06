@@ -51,7 +51,7 @@ def parse_syscad_mass_balance(uploaded_file):
         df_data = df_raw.iloc[data_start_row:, 3:3+num_streams]
         
         # 5. Build the intermediate DataFrame
-        df_tidy = pd.DataFrame(df_data.values, index=clean_properties, columns=stream_numbers)
+        df_tidy = pd.DataFrame(df_data.values, index=clean_properties, columns=combined_headers)
         
         # 6. TRANSPOSE! (Flip 90 degrees)
         df_final = df_tidy.T
