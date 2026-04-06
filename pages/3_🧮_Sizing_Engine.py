@@ -180,6 +180,8 @@ elif equip_type_code == "PU":
         
         # Load Persistence
         state = data_manager.load_equipment_state(tag)
+        if state is None:
+            state = {} # Ensure state is a dictionary to prevent .get() crashes
         
         # --- AUTO-DETECTION LOGIC ---
         # Default Flags based on Keywords in Title
