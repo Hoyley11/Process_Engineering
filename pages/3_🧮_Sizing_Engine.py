@@ -111,17 +111,13 @@ if type_code == "TH":
         st.info("No Thickeners (TH) found in Equipment List.")
         st.stop()
 
-    # Define the property keys for the math
-# --- IMPROVED FUZZY COLUMN SEARCH ---
-    # Look for solids flow (usually has 'solids' and 't/h')
-    col_solids = next((c for c in df_mb.columns if 'solids' in str(c).lower() and 't/h' in str(c).lower()), None)
-    
-    # Look for volume flow (usually has 'slurry' and 'm3' or 'm³')
+    # --- UPDATED MAPPING: MATCHING YOUR SCREENSHOT EXACTLY ---
+    col_solids = next((c for c in df_mb.columns if 'solids (t/h)' in str(c).lower()), None)
     col_slurry_vol = next((c for c in df_mb.columns if 'slurry' in str(c).lower() and ('m3/h' in str(c).lower() or 'm³/h' in str(c))), None)
 
     if not col_solids or not col_slurry_vol:
         st.error(f"Mapping Failed. Found Solids: {col_solids} | Found Vol: {col_slurry_vol}")
-        st.info("Check your Mass Balance column headers for 'Solids' and 'Slurry'.")
+        st.info("App is looking for headers like 'Solids (t/h)' and 'Slurry (m³/h)'.")
         st.stop()
 
     # Create Tabs for each Thickener
@@ -133,7 +129,6 @@ if type_code == "TH":
             title = df_th.iloc[i].get('Title', 'Untitled Thickener')
             st.markdown(f"### {tag}: {title}")
             
-            # Load Previous State
             state = data_manager.load_equipment_state(tag) or {}
             mi = state.get('manual_inputs', {})
 
@@ -143,9 +138,12 @@ if type_code == "TH":
                 st.write("**Stream Mapping**")
                 stream_options = [f"{idx} | {row['Stream_Name']}" for idx, row in df_mb.iterrows()]
                 
-                s_feed = st.selectbox("Feed Stream", stream_options, key=f"f_{tag}", index=stream_options.index(state.get('mapped_feed', stream_options[0])) if state.get('mapped_feed') in stream_options else 0)
-                s_oflow = st.selectbox("Overflow Stream", stream_options, key=f"o_{tag}", index=stream_options.index(state.get('mapped_oflow', stream_options[0])) if state.get('mapped_oflow') in stream_options else 0)
-                s_uflow = st.selectbox("Underflow Stream", stream_options, key=f"u_{tag}", index=stream_options.index(state.get('mapped_uflow', stream_options[0])) if state.get('mapped_uflow') in stream_options else 0)
+                s_feed = st.selectbox("Feed Stream", stream_options, key=f"f_{tag}", 
+                                      index=stream_options.index(state.get('mapped_feed', stream_options[0])) if state.get('mapped_feed') in stream_options else 0)
+                s_oflow = st.selectbox("Overflow Stream", stream_options, key=f"o_{tag}", 
+                                       index=stream_options.index(state.get('mapped_oflow', stream_options[0])) if state.get('mapped_oflow') in stream_options else 0)
+                s_uflow = st.selectbox("Underflow Stream", stream_options, key=f"u_{tag}", 
+                                       index=stream_options.index(state.get('mapped_uflow', stream_options[0])) if state.get('mapped_uflow') in stream_options else 0)
 
                 st.markdown("---")
                 st.write("**Design Assumptions**")
@@ -155,12 +153,12 @@ if type_code == "TH":
 
             with col_stats:
                 st.write("**Mass Balance Verification**")
-                # Extract numbers for display
                 f_num = s_feed.split(" | ")[0]
                 o_num = s_oflow.split(" | ")[0]
                 u_num = s_uflow.split(" | ")[0]
                 
-          try:
+                # --- SAFE TABLE BUILD ---
+                try:
                     summary_df = pd.DataFrame({
                         "Property": ["Solids (t/h)", "Volume (m³/h)"],
                         "Feed": [df_mb.loc[f_num, col_solids], df_mb.loc[f_num, col_slurry_vol]],
@@ -168,9 +166,8 @@ if type_code == "TH":
                         "Underflow": [df_mb.loc[u_num, col_solids], df_mb.loc[u_num, col_slurry_vol]]
                     })
                     st.table(summary_df)
-                except KeyError as e:
-                    st.warning(f"Waiting for stream selection... (Missing key: {e})")
-                    
+                except KeyError:
+                    st.warning("Ensure all streams (Feed, O/F, U/F) are correctly mapped from the Mass Balance.")
 
                 if st.button(f"🚀 Size and Save {tag}", key=f"btn_{tag}"):
                     p_data = {
@@ -181,16 +178,15 @@ if type_code == "TH":
                         'design_flux': flux, 'settling_rate': settle, 
                         'round_up_to': round_val
                     }
-                    # Run Math
-                    from calculations import thickener_th
+                    
                     res = thickener_th.calculate(tag, p_data, m_in)
                     
-                    # Add UI context for persistence
+                    # Persist mapping UI choices
                     res['mapped_feed'] = s_feed
                     res['mapped_oflow'] = s_oflow
                     res['mapped_uflow'] = s_uflow
                     res['manual_inputs'] = m_in
                     
                     data_manager.save_equipment_sizing(tag, res)
-                    st.success(f"Sizing for {tag} committed to project.")
+                    st.success(f"Sizing for {tag} committed.")
                     st.json(res['critical_dimensions'])
