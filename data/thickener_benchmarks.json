@@ -1,0 +1,5 @@
+[
+    {"mineral": "Copper", "p80_micron": 75, "min_flux_tm2h": 0.25, "max_flux_tm2h": 0.50, "settling_rate_mh": 2.5},
+    {"mineral": "Gold", "p80_micron": 106, "min_flux_tm2h": 0.40, "max_flux_tm2h": 0.80, "settling_rate_mh": 4.0},
+    {"mineral": "Iron Ore", "p80_micron": 150, "min_flux_tm2h": 0.80, "max_flux_tm2h": 1.50, "settling_rate_mh": 8.0}
+]
