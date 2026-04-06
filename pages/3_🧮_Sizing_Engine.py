@@ -1,101 +1,76 @@
 import streamlit as st
 import pandas as pd
-# Dynamically import your calculation modules
-from calculations import hopper_hp, pump_pu 
+from utils import data_manager
+from calculations import hopper_hp # Import the math module!
 
 st.set_page_config(page_title="Sizing Engine", layout="wide")
-
 st.title("🧮 Equipment Sizing Engine")
-st.markdown("Select equipment, map process streams, and execute sizing models.")
 
-# 1. Top Section: Equipment Selection
-st.subheader("1. Equipment Configuration")
-col_tag, col_type = st.columns(2)
-with col_tag:
-    equip_tag = st.text_input("Equipment Tag", "107780-HP-001")
-with col_type:
-    # We will eventually auto-detect this, but good for structure now
-    equip_type = st.selectbox("Equipment Type", ["Hopper (HP)", "Pump (PU)"])
+# 1. Fetch data
+df_mb = st.session_state.get('mass_balance', pd.DataFrame())
+df_equip = data_manager.get_master_list()
 
-st.markdown("---")
-
-# 2. Split Screen: Inputs vs Results
-col_left, col_right = st.columns([0.35, 0.65])
-
-with col_left:
-    st.subheader("2. Process Mapping")
-    feed_stream = st.text_input("SysCAD Feed Stream #")
-    
-    with st.expander("Process Overrides"):
-        fvf = st.number_input("Froth Volume Factor", value=1.5)
-        
-    st.button("Execute Sizing Model", type="primary") # Primary makes it blue/bold
-
-with col_right:
-    st.subheader("3. Execution Results")
-    
-    # Using tabs to organize the heavy output
-    tab_summary, tab_mto, tab_sketch = st.tabs(["3-Line Summary", "Material Take-Off", "Geometry Sketch"])
-    
-    with tab_summary:
-        st.info("Awaiting execution...") # Placeholder before they hit the button
-    
-    with tab_mto:
-        st.write("MTO details will appear here.")
-        
-    with tab_sketch:
-        st.write("Matplotlib sketch will render here.")
-
-# 1. Select Equipment to Size
-st.subheader("Select Equipment")
-equip_tag = st.text_input("Enter Equipment Tag", "107780-HP-001")
-equip_type = equip_tag.split('-')[1] # Extracts 'HP'
-
-# 2. Map Streams (Assuming mass balance is loaded in session_state)
-st.subheader("Map SysCAD Streams")
-if equip_type == "HP":
-    feed_stream = st.text_input("Feed Stream Number", "1001")
-    res_time = st.number_input("Residence Time (min)", 45)
-    
-    if st.button("Run Sizing Calculation"):
-        # In reality, you fetch this from your uploaded dataframe: df.loc[feed_stream]
-        mock_stream_data = {'feed_flow_m3h': 200.3} 
-        user_inputs = {'residence_time': res_time}
-        
-        # Execute the isolated module
-        results = hopper_hp.calculate(equip_tag, mock_stream_data, user_inputs)
-        
-        st.success(f"Successfully sized {equip_tag}!")
-        st.write("### 3-Line Description")
-        st.text(results["description_3_line"])
-        
-        st.write("### Material Take Off (MTO)")
-        st.json(results["mto"])
-        
-        if 'mass_balance' not in st.session_state:
+if df_mb.empty:
     st.warning("Please upload a Mass Balance on Page 1 first!")
     st.stop()
 
-df_mb = st.session_state['mass_balance']
+# 2. Equipment Selection
+st.subheader("1. Select Equipment")
+# Only show hoppers that need sizing
+pending_hoppers = df_equip[(df_equip['Type'] == 'HP')]['Tag'].tolist()
 
-# If user types stream "1001" for the hopper feed:
-feed_stream = st.text_input("Feed Stream Number", "1001")
+if not pending_hoppers:
+    st.info("No hoppers currently pending in the Equipment List.")
+    equip_tag = st.text_input("Enter tag manually:", "1000-HP-001")
+else:
+    equip_tag = st.selectbox("Select pending hopper:", pending_hoppers)
 
-if st.button("Run Sizing"):
-    if feed_stream in df_mb.index:
-        # Extract the specific row as a dictionary
-        stream_data_dict = df_mb.loc[feed_stream].to_dict()
+# 3. Process Mapping
+col1, col2 = st.columns([0.4, 0.6])
+
+with col1:
+    st.subheader("2. Process Variables")
+    feed_stream = st.selectbox("Feed Stream from SysCAD:", df_mb.index)
+    
+    with st.expander("Override Defaults", expanded=True):
+        res_time = st.number_input("Residence Time (min)", value=1.0, step=0.1)
+        fvf = st.number_input("Froth Volume Factor", value=1.5, step=0.1)
+        shape = st.selectbox("Shape", ["Round", "Square"])
+        rubber = st.checkbox("Rubber Lined", value=True)
+
+    if st.button("Execute Sizing", type="primary"):
+        # Map SysCAD property names to our standard variables
+        # *IMPORTANT: Change 'Slurry (m^3/h)' to whatever SysCAD outputs in your file*
+        slurry_flow = df_mb.loc[feed_stream, 'Slurry (m^3/h)'] if 'Slurry (m^3/h)' in df_mb.columns else 0.0
         
-        # We need to map SysCAD column names to our calculation variables
-        # SysCAD might output "Slurry (m^3/h)", we map it to "feed_flow_m3h"
-        mapped_stream_data = {
-            'feed_flow_m3h': stream_data_dict.get('Slurry (m^3/h)', 0),
-            'solids_sg': stream_data_dict.get('Solids SG', 0),
-            # Add other mappings here based on exact SysCAD naming
+        stream_data = {'max_flow_m3h': slurry_flow}
+        manual_inputs = {
+            'residence_time_min': res_time, 'fvf': fvf, 
+            'shape': shape, 'rubber_lined': rubber, 'steel_thickness_mm': 10.0
         }
         
-        # Run calculation
-        results = hopper_hp.calculate(equip_tag, mapped_stream_data, user_inputs)
-        # ... proceed to display and save ...
-    else:
-        st.error(f"Stream {feed_stream} not found in Mass Balance!")
+        # RUN THE MATH
+        results = hopper_hp.calculate(equip_tag, stream_data, manual_inputs)
+        
+        if "Error" in results.get("status", ""):
+            st.error(results["status"])
+        else:
+            # Store results in memory temporarily so we can display them
+            st.session_state['current_results'] = results
+            st.success("Sizing complete!")
+
+with col2:
+    st.subheader("3. Results")
+    if 'current_results' in st.session_state:
+        res = st.session_state['current_results']
+        st.write("### 3-Line Description")
+        st.text(res['description_3_line'])
+        
+        st.write("### Dimensions & MTO")
+        col_dim, col_mto = st.columns(2)
+        col_dim.json(res['critical_dimensions'])
+        col_mto.json(res['mto'])
+        
+        if st.button("💾 Save & Commit to Project"):
+            data_manager.save_equipment_sizing(equip_tag, res)
+            st.success(f"{equip_tag} saved! Equipment list updated.")
