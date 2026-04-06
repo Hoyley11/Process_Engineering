@@ -13,7 +13,7 @@ def parse_syscad_mass_balance(uploaded_file):
         # 1. Find the row that contains "Stream Number"
         stream_row_matches = df_raw.index[df_raw[0] == 'Stream Number'].tolist()
         if not stream_row_matches:
-            st.error("Could not find 'Stream Number' in the first column. Check file format.")
+            st.error("Could not find 'Stream Number' in the first column.")
             return None
         stream_row_idx = stream_row_matches[0]
         
@@ -21,8 +21,19 @@ def parse_syscad_mass_balance(uploaded_file):
         stream_numbers = df_raw.iloc[stream_row_idx, 3:].dropna().astype(str).tolist()
         num_streams = len(stream_numbers)
         
+        # --- NEW: Extract GenDesc (Stream Name) ---
+        gendesc_matches = df_raw.index[df_raw[0] == 'GenDesc'].tolist()
+        if gendesc_matches:
+            name_row_idx = gendesc_matches[0]
+            # Grab the names, replacing NaNs with blanks
+            stream_names = df_raw.iloc[name_row_idx, 3:3+num_streams].fillna("").astype(str).tolist()
+            # Combine them: "1001 | SAG mill feed"
+            combined_headers = [f"{num} | {name}" if name else num for num, name in zip(stream_numbers, stream_names)]
+        else:
+            combined_headers = stream_numbers
+            
         # 3. Create clean column names
-        data_start_row = stream_row_idx + 3 
+        data_start_row = stream_row_idx + 3
         
         clean_properties = []
         for idx in range(data_start_row, len(df_raw)):
