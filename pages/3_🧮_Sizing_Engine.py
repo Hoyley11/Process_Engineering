@@ -168,4 +168,9 @@ elif type_code == "HP":
         for _, r in edited_hp[edited_hp['Update?']].iterrows():
             s_num = r['Feed Stream'].split(" | ")[0]
             p_data = {'max_flow_m3h': get_val(s_num, col_slurry_vol)}
-            m_in = {'residence_time_min': r['Res Time (min)'], 'fvf': r['FVF'], '
+            m_in = {'residence_time_min': r['Res Time (min)'], 'fvf': r['FVF'], 'shape': 'Round', 'rubber_lined': True, 'steel_thickness_mm': 10}
+            res = hopper_hp.calculate(r['Tag'], p_data, m_in)
+            res['mapped_stream_ui'] = r['Feed Stream']
+            res['manual_inputs'] = m_in
+            data_manager.save_equipment_sizing(r['Tag'], res)
+        st.success("Hoppers Updated!")
