@@ -85,3 +85,54 @@ if type_code == "PU":
             data_manager.save_equipment_sizing(r['Tag'], res)
         st.success("Calculations complete!")
         st.rerun()
+
+elif equip_type_code == "TK":
+    st.subheader("Nuanced Thickener Sizing (Unit-by-Unit)")
+    
+    df_thickeners = df_equip[df_equip['Type'] == 'TK'].copy()
+    
+    # We create a column for each thickener tag
+    tabs = st.tabs(df_thickeners['Tag'].tolist())
+    
+    for i, tab in enumerate(tabs):
+        with tab:
+            tag = df_thickeners.iloc[i]['Tag']
+            st.write(f"### Design Parameters for {tag}")
+            
+            col_in, col_out = st.columns([0.4, 0.6])
+            
+            with col_in:
+                # 1. Map Multiple Streams (Nuance)
+                feed_s = st.selectbox(f"Feed Stream ({tag})", df_mb.index, key=f"f_{tag}")
+                uflow_s = st.selectbox(f"Underflow Stream ({tag})", df_mb.index, key=f"u_{tag}")
+                oflow_s = st.selectbox(f"Overflow Stream ({tag})", df_mb.index, key=f"o_{tag}")
+                
+                # 2. Design Assumptions
+                grind = st.number_input("Design P80 (µm)", value=75, key=f"p80_{tag}")
+                flux = st.number_input("Design Flux (t/m²/h)", value=0.5, step=0.05, key=f"flux_{tag}")
+                settle = st.number_input("Settling Rate (m/h)", value=3.0, step=0.5, key=f"sr_{tag}")
+                round_to = st.selectbox("Round up to nearest (m)", [1.0, 2.5, 5.0, 10.0], key=f"round_{tag}")
+
+            with col_out:
+                # 3. Show Case Comparison
+                # Pull values from Mass Balance
+                s_tph = df_mb.loc[feed_s, 'Solids Mass Flow (t/h)']
+                o_m3h = df_mb.loc[oflow_s, 'Slurry (m³/h)']
+                
+                st.write("**Stream Summary (from SysCAD):**")
+                st.table(pd.DataFrame({
+                    "Stream": ["Feed", "Underflow", "Overflow"],
+                    "Solids (t/h)": [s_tph, df_mb.loc[uflow_s, 'Solids Mass Flow (t/h)'], 0],
+                    "Volume (m³/h)": [df_mb.loc[feed_s, 'Slurry (m³/h)'], df_mb.loc[uflow_s, 'Slurry (m³/h)'], o_m3h]
+                }))
+                
+                if st.button(f"Size {tag}", type="primary"):
+                    p_data = {'solids_tph': s_tph, 'overflow_m3h': o_m3h}
+                    m_inputs = {
+                        'design_flux': flux, 'settling_rate': settle, 
+                        'round_up_to': round_to, 'p80': grind
+                    }
+                    res = thickener_tk.calculate(tag, p_data, m_inputs)
+                    st.json(res)
+                    data_manager.save_equipment_sizing(tag, res)
+                    st.success("Sizing Saved.")
