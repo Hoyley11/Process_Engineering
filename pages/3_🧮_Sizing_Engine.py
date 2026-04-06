@@ -30,7 +30,16 @@ col1, col2 = st.columns([0.4, 0.6])
 
 with col1:
     st.subheader("2. Process Variables")
+    # Stream selector (will now show "1001 | SAG mill feed")
     feed_stream = st.selectbox("Feed Stream from SysCAD:", df_mb.index)
+    
+    st.markdown("---")
+    # Smart Auto-Guesser for the flow column
+    likely_flow_cols = [c for c in df_mb.columns if 'slurry' in str(c).lower() and ('m3' in str(c).lower() or 'm^3' in str(c).lower())]
+    default_idx = df_mb.columns.tolist().index(likely_flow_cols[0]) if likely_flow_cols else 0
+    
+    # Let the user confirm or change the mapping
+    flow_column = st.selectbox("Map 'Slurry Flow' Property:", df_mb.columns, index=default_idx)
     
     with st.expander("Override Defaults", expanded=True):
         res_time = st.number_input("Residence Time (min)", value=1.0, step=0.1)
@@ -39,9 +48,8 @@ with col1:
         rubber = st.checkbox("Rubber Lined", value=True)
 
     if st.button("Execute Sizing", type="primary"):
-        # Map SysCAD property names to our standard variables
-        # *IMPORTANT: Change 'Slurry (m^3/h)' to whatever SysCAD outputs in your file*
-        slurry_flow = df_mb.loc[feed_stream, 'Slurry (m^3/h)'] if 'Slurry (m^3/h)' in df_mb.columns else 0.0
+        # We now pull EXACTLY the column you confirmed in the UI dropdown
+        slurry_flow = float(df_mb.loc[feed_stream, flow_column])
         
         stream_data = {'max_flow_m3h': slurry_flow}
         manual_inputs = {
