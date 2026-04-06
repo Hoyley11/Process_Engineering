@@ -16,32 +16,31 @@ with st.expander("📥 Import Baseline Equipment List (from Excel)"):
         try:
             df_mel = pd.read_excel(uploaded_mel)
             
-            # Look for the required columns (case-insensitive search)
+# Look for the required columns (case-insensitive)
             col_names = [c.lower() for c in df_mel.columns]
-            if 'tag' not in col_names or 'description' not in col_names:
-                st.error("Excel file must contain columns named exactly 'Tag' and 'Description'.")
+            if 'tag' not in col_names:
+                st.error("Excel file must contain a 'Tag' column.")
             else:
-                # Standardize column names
                 tag_col = df_mel.columns[col_names.index('tag')]
-                desc_col = df_mel.columns[col_names.index('description')]
+                desc_col = df_mel.columns[col_names.index('description')] if 'description' in col_names else None
+                title_col = df_mel.columns[col_names.index('title')] if 'title' in col_names else None
                 
-                # Fetch current master list
                 df_master = data_manager.get_master_list()
                 existing_tags = df_master['Tag'].tolist() if not df_master.empty else []
                 
                 new_items_added = 0
                 for _, row in df_mel.iterrows():
                     tag = str(row[tag_col]).strip()
-                    desc = str(row[desc_col]).strip()
+                    desc = str(row[desc_col]).strip() if desc_col else ""
+                    title = str(row[title_col]).strip() if title_col else ""
                     
                     if tag != 'nan' and tag not in existing_tags:
-                        # Extract the equipment type (e.g., 'HP' from '1000-HP-001')
                         equip_type = tag.split('-')[1] if '-' in tag else "Unknown"
-                        
                         new_row = {
                             "Tag": tag,
+                            "Title": title,
                             "Type": equip_type,
-                            "Status": "Pending Sizing", # Sets it as a to-do item
+                            "Status": "Pending Sizing",
                             "Description": desc,
                             "Installed Power (kW)": 0.0,
                             "Absorbed Power (kW)": 0.0,
