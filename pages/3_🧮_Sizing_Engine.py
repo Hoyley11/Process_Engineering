@@ -1,28 +1,35 @@
 import streamlit as st
 import pandas as pd
 from utils import data_manager
-from calculations import hopper_hp, pump_pu
+from calculations import hopper_hp, pump_pu, thickener_th # Renamed to TH
 
 st.set_page_config(page_title="Sizing Engine", layout="wide")
 st.title("🧮 Bulk Equipment Sizing Engine")
 
+# --- 1. FETCH SYSTEM DATA ---
 df_mb = st.session_state.get('mass_balance', pd.DataFrame())
 df_equip = data_manager.get_master_list()
 
 if df_mb.empty or df_equip.empty:
-    st.warning("Please ensure Mass Balance (Page 1) and Equipment List (Page 2) are loaded.")
+    st.warning("⚠️ Please ensure Mass Balance and Equipment List are loaded.")
     st.stop()
 
+# --- 2. UPDATED CATEGORY MAPPING ---
 category_map = {
-    "Hoppers (HP)": "HP", 
-    "Pumps (PU)": "PU", 
     "Thickeners (TH)": "TH",
-    "Flotation Cells (FC)": "FC"
+    "Flotation Cells (FC)": "FC",
+    "Tanks (TK)": "TK",
+    "Filters (FL)": "FL",
+    "Mills (ML)": "ML",
+    "Crushers (CR)": "CR",
+    "Conveyors (CV)": "CV",
+    "Hoppers (HP)": "HP",
+    "Pumps (PU)": "PU"
 }
 category = st.selectbox("Select Equipment Category to Size:", list(category_map.keys()))
 equip_type_code = category_map[category]
-category = st.selectbox("Category", list(category_map.keys()))
-type_code = category_map[category]
+
+st.markdown("---")
 
 if type_code == "PU":
     st.subheader("Bulk Pump Mapping & Sizing")
@@ -93,53 +100,84 @@ if type_code == "PU":
         st.success("Calculations complete!")
         st.rerun()
 
-elif equip_type_code == "TH":
-    st.subheader("Nuanced Thickener Sizing (Unit-by-Unit)")
+# =====================================================================
+# THICKENER (TH) NUANCED SIZING
+# =====================================================================
+if equip_type_code == "TH":
+    st.subheader("Unit-by-Unit Thickener Sizing")
     
-    df_thickeners = df_equip[df_equip['Type'] == 'TH'].copy()
-    
-    # We create a column for each thickener tag
-    tabs = st.tabs(df_thickeners['Tag'].tolist())
+    df_th = df_equip[df_equip['Type'] == 'TH'].copy()
+    if df_th.empty:
+        st.info("No Thickeners (TH) found in Equipment List.")
+        st.stop()
+
+    # Define the property keys for the math
+    col_solids = next((c for c in df_mb.columns if 'Solids Mass Flow (t/h)' in str(c)), None)
+    col_slurry_vol = next((c for c in df_mb.columns if 'Slurry (m³/h)' in str(c)), None)
+
+    # Create Tabs for each Thickener
+    tabs = st.tabs(df_th['Tag'].tolist())
     
     for i, tab in enumerate(tabs):
         with tab:
-            tag = df_thickeners.iloc[i]['Tag']
-            st.write(f"### Design Parameters for {tag}")
+            tag = df_th.iloc[i]['Tag']
+            title = df_th.iloc[i].get('Title', 'Untitled Thickener')
+            st.markdown(f"### {tag}: {title}")
             
-            col_in, col_out = st.columns([0.4, 0.6])
-            
-            with col_in:
-                # 1. Map Multiple Streams (Nuance)
-                feed_s = st.selectbox(f"Feed Stream ({tag})", df_mb.index, key=f"f_{tag}")
-                uflow_s = st.selectbox(f"Underflow Stream ({tag})", df_mb.index, key=f"u_{tag}")
-                oflow_s = st.selectbox(f"Overflow Stream ({tag})", df_mb.index, key=f"o_{tag}")
-                
-                # 2. Design Assumptions
-                grind = st.number_input("Design P80 (µm)", value=75, key=f"p80_{tag}")
-                flux = st.number_input("Design Flux (t/m²/h)", value=0.5, step=0.05, key=f"flux_{tag}")
-                settle = st.number_input("Settling Rate (m/h)", value=3.0, step=0.5, key=f"sr_{tag}")
-                round_to = st.selectbox("Round up to nearest (m)", [1.0, 2.5, 5.0, 10.0], key=f"round_{tag}")
+            # Load Previous State
+            state = data_manager.load_equipment_state(tag) or {}
+            mi = state.get('manual_inputs', {})
 
-            with col_out:
-                # 3. Show Case Comparison
-                # Pull values from Mass Balance
-                s_tph = df_mb.loc[feed_s, 'Solids Mass Flow (t/h)']
-                o_m3h = df_mb.loc[oflow_s, 'Slurry (m³/h)']
+            col_ui, col_stats = st.columns([0.4, 0.6])
+            
+            with col_ui:
+                st.write("**Stream Mapping**")
+                stream_options = [f"{idx} | {row['Stream_Name']}" for idx, row in df_mb.iterrows()]
                 
-                st.write("**Stream Summary (from SysCAD):**")
-                st.table(pd.DataFrame({
-                    "Stream": ["Feed", "Underflow", "Overflow"],
-                    "Solids (t/h)": [s_tph, df_mb.loc[uflow_s, 'Solids Mass Flow (t/h)'], 0],
-                    "Volume (m³/h)": [df_mb.loc[feed_s, 'Slurry (m³/h)'], df_mb.loc[uflow_s, 'Slurry (m³/h)'], o_m3h]
-                }))
+                s_feed = st.selectbox("Feed Stream", stream_options, key=f"f_{tag}", index=stream_options.index(state.get('mapped_feed', stream_options[0])) if state.get('mapped_feed') in stream_options else 0)
+                s_oflow = st.selectbox("Overflow Stream", stream_options, key=f"o_{tag}", index=stream_options.index(state.get('mapped_oflow', stream_options[0])) if state.get('mapped_oflow') in stream_options else 0)
+                s_uflow = st.selectbox("Underflow Stream", stream_options, key=f"u_{tag}", index=stream_options.index(state.get('mapped_uflow', stream_options[0])) if state.get('mapped_uflow') in stream_options else 0)
+
+                st.markdown("---")
+                st.write("**Design Assumptions**")
+                flux = st.number_input("Design Flux (t/m²/h)", value=mi.get('design_flux', 0.4), step=0.05, key=f"flux_{tag}")
+                settle = st.number_input("Settling Rate (m/h)", value=mi.get('settling_rate', 3.0), step=0.1, key=f"sr_{tag}")
+                round_val = st.selectbox("Round up to nearest (m)", [1.0, 2.5, 5.0], index=1, key=f"rd_{tag}")
+
+            with col_stats:
+                st.write("**Mass Balance Verification**")
+                # Extract numbers for display
+                f_num = s_feed.split(" | ")[0]
+                o_num = s_oflow.split(" | ")[0]
+                u_num = s_uflow.split(" | ")[0]
                 
-                if st.button(f"Size {tag}", type="primary"):
-                    p_data = {'solids_tph': s_tph, 'overflow_m3h': o_m3h}
-                    m_inputs = {
-                        'design_flux': flux, 'settling_rate': settle, 
-                        'round_up_to': round_to, 'p80': grind
+                summary_df = pd.DataFrame({
+                    "Property": ["Solids (t/h)", "Volume (m³/h)"],
+                    "Feed": [df_mb.loc[f_num, col_solids], df_mb.loc[f_num, col_slurry_vol]],
+                    "Overflow": [df_mb.loc[o_num, col_solids], df_mb.loc[o_num, col_slurry_vol]],
+                    "Underflow": [df_mb.loc[u_num, col_solids], df_mb.loc[u_num, col_slurry_vol]]
+                })
+                st.table(summary_df)
+
+                if st.button(f"🚀 Size and Save {tag}", key=f"btn_{tag}"):
+                    p_data = {
+                        'solids_tph': df_mb.loc[f_num, col_solids],
+                        'overflow_m3h': df_mb.loc[o_num, col_slurry_vol]
                     }
-                    res = thickener_tk.calculate(tag, p_data, m_inputs)
-                    st.json(res)
+                    m_in = {
+                        'design_flux': flux, 'settling_rate': settle, 
+                        'round_up_to': round_val
+                    }
+                    # Run Math
+                    from calculations import thickener_th
+                    res = thickener_th.calculate(tag, p_data, m_in)
+                    
+                    # Add UI context for persistence
+                    res['mapped_feed'] = s_feed
+                    res['mapped_oflow'] = s_oflow
+                    res['mapped_uflow'] = s_uflow
+                    res['manual_inputs'] = m_in
+                    
                     data_manager.save_equipment_sizing(tag, res)
-                    st.success("Sizing Saved.")
+                    st.success(f"Sizing for {tag} committed to project.")
+                    st.json(res['critical_dimensions'])
