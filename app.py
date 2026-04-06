@@ -13,8 +13,8 @@ st.set_page_config(
 with st.sidebar:
     st.image("logo.png") # Great for company branding
     st.markdown("---")
-    st.write("**Active Project:** Mantoverde")
-    st.write("**Revision:** Rev B")
+    st.write("**Active Project:** Test Project")
+    st.write("**Revision:** Rev A")
   
 st.set_page_config(page_title="Process Calculation Engine", layout="wide")
 
