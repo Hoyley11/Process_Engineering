@@ -112,8 +112,17 @@ if type_code == "TH":
         st.stop()
 
     # Define the property keys for the math
-    col_solids = next((c for c in df_mb.columns if 'Solids Mass Flow (t/h)' in str(c)), None)
-    col_slurry_vol = next((c for c in df_mb.columns if 'Slurry (m³/h)' in str(c)), None)
+# --- IMPROVED FUZZY COLUMN SEARCH ---
+    # Look for solids flow (usually has 'solids' and 't/h')
+    col_solids = next((c for c in df_mb.columns if 'solids' in str(c).lower() and 't/h' in str(c).lower()), None)
+    
+    # Look for volume flow (usually has 'slurry' and 'm3' or 'm³')
+    col_slurry_vol = next((c for c in df_mb.columns if 'slurry' in str(c).lower() and ('m3/h' in str(c).lower() or 'm³/h' in str(c))), None)
+
+    if not col_solids or not col_slurry_vol:
+        st.error(f"Mapping Failed. Found Solids: {col_solids} | Found Vol: {col_slurry_vol}")
+        st.info("Check your Mass Balance column headers for 'Solids' and 'Slurry'.")
+        st.stop()
 
     # Create Tabs for each Thickener
     tabs = st.tabs(df_th['Tag'].tolist())
