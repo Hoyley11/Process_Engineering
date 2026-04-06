@@ -24,18 +24,17 @@ category_map = {
     "Thickeners (TH)": "TH",
     "Pumps (PU)": "PU",
     "Hoppers (HP)": "HP",
-    "Flotation Cells (FC)": "FC"
+    "Flotation Cells (FC)": "FC",
+    "Tanks (TK)": "TK"
 }
 category = st.selectbox("Select Equipment Category to Size:", list(category_map.keys()))
 type_code = category_map[category]
 
 # --- 3. FUZZY COLUMN MAPPING ---
-# We search the Mass Balance once for the whole page
 col_solids = next((c for c in df_mb.columns if 'solids (t/h)' in str(c).lower()), None)
 col_slurry_vol = next((c for c in df_mb.columns if 'slurry' in str(c).lower() and ('m3/h' in str(c).lower() or 'm³/h' in str(c))), None)
 col_dens = next((c for c in df_mb.columns if 'density' in str(c).lower() and 't/m3' in str(c).lower()), None)
 
-# Helper function to safely get a single number from potentially duplicate streams
 def get_val(s_num, col_name):
     if not col_name or s_num not in df_mb.index:
         return 0.0
@@ -52,7 +51,7 @@ st.markdown("---")
 if type_code == "TH":
     df_th = df_equip[df_equip['Type'] == 'TH'].copy()
     if df_th.empty:
-        st.info("No Thickeners (TH) found in Equipment List.")
+        st.info("No Thickeners (TH) found.")
         st.stop()
 
     tabs = st.tabs(df_th['Tag'].tolist())
@@ -63,12 +62,10 @@ if type_code == "TH":
             
             st.write(f"### {tag} Design Scenarios")
             
-            # Initialize scenario data
             if 'scenarios' not in state:
                 default_scenarios = [
                     {"Case": "Nominal", "Factor": 1.0, "Flux": 0.4, "Settling": 3.0},
-                    {"Case": "Design (+20%)", "Factor": 1.2, "Flux": 0.4, "Settling": 3.0},
-                    {"Case": "Worst Case", "Factor": 1.0, "Flux": 0.25, "Settling": 2.0}
+                    {"Case": "Design (+20%)", "Factor": 1.2, "Flux": 0.4, "Settling": 3.0}
                 ]
             else:
                 default_scenarios = state['scenarios']
@@ -98,30 +95,20 @@ if type_code == "TH":
 
             st.markdown("---")
             c1, c2, c3 = st.columns(3)
-            max_calc = max([r['Req. Dia (m)'] for r in case_results])
+            max_calc = max([r['Req. Dia (m)'] for r in case_results]) if case_results else 0.0
             spec_dia = c1.number_input("Specified Diameter (m)", value=float(max_calc), key=f"sp_{tag}")
-            spec_round = c2.selectbox("Round To", [0, 2.5, 5.0], index=1, key=f"rn_{tag}")
-            final_dia = spec_dia if spec_round == 0 else (math.ceil(spec_dia / spec_round) * spec_round)
-            c3.metric("Final Selection", f"{final_dia} m")
-
- if st.button(f"✅ Save {tag}", key=f"save_{tag}"):
-                # 1. Run a final baseline calculation to get the MTO/Drive data
-                final_res = thickener_th.calculate(tag, 
-                    {'solids_tph': base_solids, 'overflow_m3h': base_vol}, 
-                    {'design_flux': 0.4, 'settling_rate': 3.0, 'round_up_to': 1.0}
-                )
-                
-                # 2. Safety Check: If the calc failed, create a dummy structure to hold your spec
+            
+            if st.button(f"✅ Save {tag}", key=f"save_{tag}"):
+                final_res = thickener_th.calculate(tag, {'solids_tph': base_solids, 'overflow_m3h': base_vol}, 
+                                                {'design_flux': 0.4, 'settling_rate': 3.0, 'round_up_to': 1.0})
                 if "critical_dimensions" not in final_res:
                     final_res["critical_dimensions"] = {}
                 
-                # 3. OVERRIDE with your manual engineering specification
                 final_res['status'] = "Sized"
                 final_res['critical_dimensions']['Diameter (m)'] = float(spec_dia)
                 final_res['scenarios'] = edited_scenarios.to_dict('records')
                 final_res['mapped_feed'] = s_feed
                 
-                # 4. Save to the master equipment list
                 data_manager.save_equipment_sizing(tag, final_res)
                 st.success(f"Final Spec for {tag} saved as {spec_dia}m.")
 
@@ -181,9 +168,4 @@ elif type_code == "HP":
         for _, r in edited_hp[edited_hp['Update?']].iterrows():
             s_num = r['Feed Stream'].split(" | ")[0]
             p_data = {'max_flow_m3h': get_val(s_num, col_slurry_vol)}
-            m_in = {'residence_time_min': r['Res Time (min)'], 'fvf': r['FVF'], 'shape': 'Round', 'rubber_lined': True, 'steel_thickness_mm': 10}
-            res = hopper_hp.calculate(r['Tag'], p_data, m_in)
-            res['mapped_stream_ui'] = r['Feed Stream']
-            res['manual_inputs'] = m_in
-            data_manager.save_equipment_sizing(r['Tag'], res)
-        st.success("Hoppers Updated!")
+            m_in = {'residence_time_min': r['Res Time (min)'], 'fvf': r['FVF'], '
