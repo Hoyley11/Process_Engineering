@@ -10,20 +10,18 @@ def parse_syscad_mass_balance(uploaded_file):
         # Read the raw excel file without headers to inspect the structure
         df_raw = pd.read_excel(uploaded_file, header=None)
         
-        # 1. Find the row that contains "Stream Number" (Usually index 0)
+        # 1. Find the row that contains "Stream Number"
         stream_row_matches = df_raw.index[df_raw[0] == 'Stream Number'].tolist()
         if not stream_row_matches:
             st.error("Could not find 'Stream Number' in the first column. Check file format.")
             return None
         stream_row_idx = stream_row_matches[0]
         
-        # 2. Extract Stream Numbers (Starts from Column D / index 3)
-        # We drop NaN values in case there are empty columns at the far right
+        # 2. Extract Stream Numbers 
         stream_numbers = df_raw.iloc[stream_row_idx, 3:].dropna().astype(str).tolist()
         num_streams = len(stream_numbers)
         
-        # 3. Create clean column names by combining Description (Col A) and Units (Col B)
-        # Based on standard SysCAD format, actual numeric data starts 3 rows below 'Stream Number'
+        # 3. Create clean column names
         data_start_row = stream_row_idx + 3 
         
         clean_properties = []
@@ -39,18 +37,22 @@ def parse_syscad_mass_balance(uploaded_file):
                 clean_properties.append(f"Unknown_Property_{idx}")
                 
         # 4. Extract the actual numeric data matrix
-        # Slice rows from data start to end, and columns from index 3 to the end of the streams
         df_data = df_raw.iloc[data_start_row:, 3:3+num_streams]
         
         # 5. Build the intermediate DataFrame
         df_tidy = pd.DataFrame(df_data.values, index=clean_properties, columns=stream_numbers)
         
         # 6. TRANSPOSE! (Flip 90 degrees)
-        # Now: Rows = Streams, Columns = Properties
         df_final = df_tidy.T
         
-        # 7. Convert text numbers into actual math numbers (floats) where possible
-        df_final = df_final.apply(pd.to_numeric, errors='ignore')
+        # 7. Convert text numbers into actual math numbers
+        # We loop through columns and use 'coerce' so any text (like "Trace") 
+        # becomes a blank (NaN) instead of crashing our math later.
+        for col in df_final.columns:
+            df_final[col] = pd.to_numeric(df_final[col], errors='coerce')
+            
+        # Fill those blanks with 0 so math doesn't fail
+        df_final = df_final.fillna(0)
         
         # Clean up the index name for clarity
         df_final.index.name = "Stream_Number"
