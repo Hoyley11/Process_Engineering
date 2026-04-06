@@ -1,84 +1,140 @@
 import streamlit as st
 import pandas as pd
 from utils import data_manager
-from calculations import hopper_hp # Import the math module!
+from calculations import hopper_hp
 
 st.set_page_config(page_title="Sizing Engine", layout="wide")
-st.title("🧮 Equipment Sizing Engine")
+st.title("🧮 Bulk Equipment Sizing Engine")
 
-# 1. Fetch data
+# --- 1. FETCH SYSTEM DATA ---
 df_mb = st.session_state.get('mass_balance', pd.DataFrame())
 df_equip = data_manager.get_master_list()
 
 if df_mb.empty:
-    st.warning("Please upload a Mass Balance on Page 1 first!")
+    st.warning("⚠️ Please upload a Mass Balance on Page 1 first!")
     st.stop()
 
-# 2. Equipment Selection
-st.subheader("1. Select Equipment")
-# Only show hoppers that need sizing
-pending_hoppers = df_equip[(df_equip['Type'] == 'HP')]['Tag'].tolist()
+if df_equip.empty:
+    st.warning("⚠️ Please import an Equipment List on Page 2 first!")
+    st.stop()
 
-if not pending_hoppers:
-    st.info("No hoppers currently pending in the Equipment List.")
-    equip_tag = st.text_input("Enter tag manually:", "1000-HP-001")
-else:
-    equip_tag = st.selectbox("Select pending hopper:", pending_hoppers)
+# --- 2. EQUIPMENT CATEGORY SELECTION ---
+st.subheader("1. Select Equipment Category")
+category_map = {
+    "Hoppers (HP)": "HP", 
+    "Pumps (PU)": "PU", 
+    "Flotation Cells (FL)": "FL"
+}
+category = st.selectbox("Category", list(category_map.keys()))
+equip_type_code = category_map[category]
 
-# 3. Process Mapping
-col1, col2 = st.columns([0.4, 0.6])
+st.markdown("---")
 
-with col1:
-    st.subheader("2. Process Variables")
-    # Stream selector (will now show "1001 | SAG mill feed")
-    feed_stream = st.selectbox("Feed Stream from SysCAD:", df_mb.index)
+# =====================================================================
+# HOPPER BULK SIZING LOGIC
+# =====================================================================
+if equip_type_code == "HP":
+    st.subheader("2. Bulk Hopper Process Mapping")
     
-    st.markdown("---")
-    # Smart Auto-Guesser for the flow column
+    # 1. Filter the master list for Hoppers
+    df_hoppers = df_equip[df_equip['Type'] == 'HP'].copy()
+    if df_hoppers.empty:
+        st.info("No hoppers found in the current Equipment List.")
+        st.stop()
+        
+    # 2. Global Stream Property Selection
+    # (Select the Flow column once for all hoppers to save grid space)
     likely_flow_cols = [c for c in df_mb.columns if 'slurry' in str(c).lower() and ('m3' in str(c).lower() or 'm^3' in str(c).lower())]
-    default_idx = df_mb.columns.tolist().index(likely_flow_cols[0]) if likely_flow_cols else 0
+    default_flow_idx = df_mb.columns.tolist().index(likely_flow_cols[0]) if likely_flow_cols else 0
+    flow_col_global = st.selectbox("Global 'Slurry Flow' Property:", df_mb.columns, index=default_flow_idx)
     
-    # Let the user confirm or change the mapping
-    flow_column = st.selectbox("Map 'Slurry Flow' Property:", df_mb.columns, index=default_idx)
+    # 3. Build the Editable Grid Data
+    stream_options = df_mb.index.tolist()
+    grid_data = []
     
-    with st.expander("Override Defaults", expanded=True):
-        res_time = st.number_input("Residence Time (min)", value=1.0, step=0.1)
-        fvf = st.number_input("Froth Volume Factor", value=1.5, step=0.1)
-        shape = st.selectbox("Shape", ["Round", "Square"])
-        rubber = st.checkbox("Rubber Lined", value=True)
-
-    if st.button("Execute Sizing", type="primary"):
-        # We now pull EXACTLY the column you confirmed in the UI dropdown
-        slurry_flow = float(df_mb.loc[feed_stream, flow_column])
+    for _, row in df_hoppers.iterrows():
+        tag = row['Tag']
         
-        stream_data = {'max_flow_m3h': slurry_flow}
-        manual_inputs = {
-            'residence_time_min': res_time, 'fvf': fvf, 
-            'shape': shape, 'rubber_lined': rubber, 'steel_thickness_mm': 10.0
-        }
+        # Load previous sizing state if it exists to prepopulate the grid!
+        existing_state = data_manager.load_equipment_state(tag)
         
-        # RUN THE MATH
-        results = hopper_hp.calculate(equip_tag, stream_data, manual_inputs)
+        # Defaults
+        feed_stream = stream_options[0] if stream_options else ""
+        res_time = 1.0
+        fvf = 1.5
+        shape = "Round"
+        rubber = True
         
-        if "Error" in results.get("status", ""):
-            st.error(results["status"])
-        else:
-            # Store results in memory temporarily so we can display them
-            st.session_state['current_results'] = results
-            st.success("Sizing complete!")
-
-with col2:
-    st.subheader("3. Results")
-    if 'current_results' in st.session_state:
-        res = st.session_state['current_results']
-        st.write("### 3-Line Description")
-        st.text(res['description_3_line'])
+        # Override defaults if previously saved
+        if existing_state and 'manual_inputs' in existing_state:
+            prev_stream = existing_state.get('mapped_stream', "")
+            if prev_stream in stream_options:
+                feed_stream = prev_stream
+                
+            mi = existing_state['manual_inputs']
+            res_time = mi.get('residence_time_min', res_time)
+            fvf = mi.get('fvf', fvf)
+            shape = mi.get('shape', shape)
+            rubber = mi.get('rubber_lined', rubber)
+            
+        grid_data.append({
+            "Tag": tag,
+            "Title/Desc": row.get('Title', '') or row.get('Description', ''),
+            "Feed Stream": feed_stream,
+            "Res Time (min)": float(res_time),
+            "FVF": float(fvf),
+            "Shape": shape,
+            "Rubber Lined": rubber
+        })
         
-        st.write("### Dimensions & MTO")
-        col_dim, col_mto = st.columns(2)
-        col_dim.json(res['critical_dimensions'])
-        col_mto.json(res['mto'])
+    df_grid = pd.DataFrame(grid_data)
+    
+    # 4. Render the Interactive Grid
+    st.write("Edit process parameters directly in the grid below:")
+    
+    edited_df = st.data_editor(
+        df_grid,
+        column_config={
+            "Tag": st.column_config.TextColumn("Tag", disabled=True),
+            "Title/Desc": st.column_config.TextColumn("Title/Desc", disabled=True),
+            "Feed Stream": st.column_config.SelectboxColumn("Feed Stream", options=stream_options, required=True),
+            "Res Time (min)": st.column_config.NumberColumn("Res Time (min)", min_value=0.1, step=0.5, format="%.2f"),
+            "FVF": st.column_config.NumberColumn("FVF", min_value=1.0, step=0.1, format="%.2f"),
+            "Shape": st.column_config.SelectboxColumn("Shape", options=["Round", "Square"], required=True),
+            "Rubber Lined": st.column_config.CheckboxColumn("Rubber Lined")
+        },
+        hide_index=True,
+        use_container_width=True
+    )
+    
+    # 5. Execute Bulk Sizing
+    if st.button("🚀 Execute & Save Bulk Sizing", type="primary"):
+        success_count = 0
+        results_list = []
         
-        if st.button("💾 Save & Commit to Project"):
-            data_manager.save_equipment_sizing(equip_tag, res)
-            st.success(f"{equip_tag} saved! Equipment list updated.")
+        with st.spinner("Calculating MTOs and sizing all hoppers..."):
+            for _, row in edited_df.iterrows():
+                tag = row['Tag']
+                stream = row['Feed Stream']
+                
+                # Fetch exact flow from mass balance
+                try:
+                    slurry_flow = float(df_mb.loc[stream, flow_col_global])
+                except KeyError:
+                    slurry_flow = 0.0
+                    
+                stream_data = {'max_flow_m3h': slurry_flow}
+                manual_inputs = {
+                    'residence_time_min': row['Res Time (min)'],
+                    'fvf': row['FVF'],
+                    'shape': row['Shape'],
+                    'rubber_lined': row['Rubber Lined'],
+                    'steel_thickness_mm': 10.0 # Could expose this to the grid later if needed
+                }
+                
+                # Run isolated math module
+                res = hopper_hp.calculate(tag, stream_data, manual_inputs)
+                
+                # Inject UI choices into the result so we can load them next time
+                res['mapped_stream'] = stream
+                res['manual_inputs'] =
