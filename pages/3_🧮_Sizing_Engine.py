@@ -100,116 +100,82 @@ if type_code == "PU":
         st.success("Calculations complete!")
         st.rerun()
 
-# =====================================================================
-# THICKENER (TH) NUANCED SIZING
-# =====================================================================
 if type_code == "TH":
-    st.subheader("Unit-by-Unit Thickener Sizing")
+    st.subheader("Unit-by-Unit Multi-Case Thickener Sizing")
     
     df_th = df_equip[df_equip['Type'] == 'TH'].copy()
-    if df_th.empty:
-        st.info("No Thickeners (TH) found in Equipment List.")
-        st.stop()
-
-    # --- UPDATED MAPPING: MATCHING YOUR SCREENSHOT EXACTLY ---
-    col_solids = next((c for c in df_mb.columns if 'solids (t/h)' in str(c).lower()), None)
-    col_slurry_vol = next((c for c in df_mb.columns if 'slurry' in str(c).lower() and ('m3/h' in str(c).lower() or 'm³/h' in str(c))), None)
-
-    if not col_solids or not col_slurry_vol:
-        st.error(f"Mapping Failed. Found Solids: {col_solids} | Found Vol: {col_slurry_vol}")
-        st.info("App is looking for headers like 'Solids (t/h)' and 'Slurry (m³/h)'.")
-        st.stop()
-
-    # Create Tabs for each Thickener
     tabs = st.tabs(df_th['Tag'].tolist())
     
     for i, tab in enumerate(tabs):
         with tab:
             tag = df_th.iloc[i]['Tag']
-            title = df_th.iloc[i].get('Title', 'Untitled Thickener')
-            st.markdown(f"### {tag}: {title}")
-            
             state = data_manager.load_equipment_state(tag) or {}
-            mi = state.get('manual_inputs', {})
-
-            col_ui, col_stats = st.columns([0.4, 0.6])
             
-            with col_ui:
-                st.write("**Stream Mapping**")
+            # --- 1. SETUP SCENARIOS ---
+            st.markdown(f"### {tag} Design Scenarios")
+            st.info("Define your design cases below (e.g. Nominal, Design +20%, Peak).")
+            
+            # Initialize scenario data from state or defaults
+            if 'scenarios' not in state:
+                default_scenarios = [
+                    {"Case": "Nominal", "Factor": 1.0, "Flux": 0.4, "Settling": 3.0},
+                    {"Case": "Design (+20%)", "Factor": 1.2, "Flux": 0.4, "Settling": 3.0},
+                    {"Case": "Worst Case", "Factor": 1.0, "Flux": 0.25, "Settling": 2.0}
+                ]
+            else:
+                default_scenarios = state['scenarios']
+
+            # Editable Scenario Grid
+            edited_scenarios = st.data_editor(
+                pd.DataFrame(default_scenarios),
+                num_rows="dynamic",
+                key=f"grid_{tag}",
+                use_container_width=True
+            )
+
+            # --- 2. STREAM MAPPING ---
+            st.markdown("---")
+            col_map, col_results = st.columns([0.4, 0.6])
+            
+            with col_map:
+                st.write("**Base Stream Mapping (Nominal)**")
                 stream_options = [f"{idx} | {row['Stream_Name']}" for idx, row in df_mb.iterrows()]
-                
-                s_feed = st.selectbox("Feed Stream", stream_options, key=f"f_{tag}", 
-                                      index=stream_options.index(state.get('mapped_feed', stream_options[0])) if state.get('mapped_feed') in stream_options else 0)
-                s_oflow = st.selectbox("Overflow Stream", stream_options, key=f"o_{tag}", 
-                                       index=stream_options.index(state.get('mapped_oflow', stream_options[0])) if state.get('mapped_oflow') in stream_options else 0)
-                s_uflow = st.selectbox("Underflow Stream", stream_options, key=f"u_{tag}", 
-                                       index=stream_options.index(state.get('mapped_uflow', stream_options[0])) if state.get('mapped_uflow') in stream_options else 0)
-
-                st.markdown("---")
-                st.write("**Design Assumptions**")
-                flux = st.number_input("Design Flux (t/m²/h)", value=mi.get('design_flux', 0.4), step=0.05, key=f"flux_{tag}")
-                settle = st.number_input("Settling Rate (m/h)", value=mi.get('settling_rate', 3.0), step=0.1, key=f"sr_{tag}")
-                round_val = st.selectbox("Round up to nearest (m)", [1.0, 2.5, 5.0], index=1, key=f"rd_{tag}")
-
-           with col_stats:
-                st.write("**Mass Balance Verification**")
+                s_feed = st.selectbox("Feed Stream", stream_options, key=f"f_{tag}")
                 f_num = s_feed.split(" | ")[0]
-                o_num = s_oflow.split(" | ")[0]
-                u_num = s_uflow.split(" | ")[0]
                 
-                # Helper function to grab a single float and avoid 'Series' mess
-                def get_val(s_num, col):
-                    val = df_mb.loc[s_num, col]
-                    if isinstance(val, pd.Series):
-                        return val.iloc[0] # Just take the first occurrence
-                    return val
-
-                try:
-                    summary_df = pd.DataFrame({
-                        "Property": ["Solids (t/h)", "Volume (m³/h)"],
-                        "Feed": [get_val(f_num, col_solids), get_val(f_num, col_slurry_vol)],
-                        "Overflow": [get_val(o_num, col_solids), get_val(o_num, col_slurry_vol)],
-                        "Underflow": [get_val(u_num, col_solids), get_val(u_num, col_slurry_vol)]
-                    })
-                    # Format for clean display
-                    st.table(summary_df.style.format(precision=2))
-                except Exception:
-                    st.warning("Select valid streams to view mass balance data.")
+                # Fetch Base Values
+                base_solids = float(df_mb.loc[f_num, col_solids].iloc[0] if isinstance(df_mb.loc[f_num, col_solids], pd.Series) else df_mb.loc[f_num, col_solids])
                 
-                # --- SAFE TABLE BUILD ---
-                try:
-                    summary_df = pd.DataFrame({
-                        "Property": ["Solids (t/h)", "Volume (m³/h)"],
-                        "Feed": [df_mb.loc[f_num, col_solids], df_mb.loc[f_num, col_slurry_vol]],
-                        "Overflow": [df_mb.loc[o_num, col_solids], df_mb.loc[o_num, col_slurry_vol]],
-                        "Underflow": [df_mb.loc[u_num, col_solids], df_mb.loc[u_num, col_slurry_vol]]
-                    })
-                    st.table(summary_df)
-                except KeyError:
-                    st.warning("Ensure all streams (Feed, O/F, U/F) are correctly mapped from the Mass Balance.")
+            # --- 3. CALCULATE ALL CASES ---
+            case_results = []
+            for _, row in edited_scenarios.iterrows():
+                calc_solids = base_solids * row['Factor']
+                # Run the math module for this case
+                res = thickener_th.calculate(tag, {'solids_tph': calc_solids}, {'design_flux': row['Flux'], 'settling_rate': row['Settling'], 'round_up_to': 1.0})
+                
+                case_results.append({
+                    "Case": row['Case'],
+                    "Solids (t/h)": round(calc_solids, 1),
+                    "Flux (t/m2h)": row['Flux'],
+                    "Req. Dia (m)": res['critical_dimensions']['Diameter (m)']
+                })
 
-                if st.button(f"🚀 Size and Save {tag}", key=f"btn_{tag}"):
-                    p_data = {
-                        'solids_tph': df_mb.loc[f_num, col_solids],
-                        'overflow_m3h': df_mb.loc[o_num, col_slurry_vol]
-                    }
-                    m_in = {
-                        'design_flux': flux, 'settling_rate': settle, 
-                        'round_up_to': round_val
-                    }
-                    
-                    res = thickener_th.calculate(tag, p_data, m_in)
-                    
-                    # --- ADDED SAFETY CHECK ---
-                    if "Error" in res['status']:
-                        st.error(res['status'])
-                    else:
-                        # Persist mapping UI choices
-                        res['mapped_feed'] = s_feed
-                        res['mapped_oflow'] = s_oflow
-                        res['mapped_uflow'] = s_uflow
-                        res['manual_inputs'] = m_in
-                        
-                        data_manager.save_equipment_sizing(tag, res)
-                        st.success(f"Sizing for {tag} committed.")
-                        st.json(res['critical_dimensions'])
+            with col_results:
+                st.write("**Calculated Requirements**")
+                st.table(pd.DataFrame(case_results))
+
+            # --- 4. ENGINEER SPECIFICATION ---
+            st.markdown("---")
+            st.write("#### Final Engineering Specification")
+            c1, c2, c3 = st.columns(3)
+            
+            # Suggest the maximum calculated diameter as the starting point
+            max_calc_dia = max([r['Req. Dia (m)'] for r in case_results])
+            
+            spec_dia = c1.number_input("Specified Diameter (m)", value=float(max_calc_dia), step=0.5, key=f"spec_{tag}")
+            spec_round = c2.selectbox("Round to Standard?", [0, 2.5, 5.0, 10.0], index=1, key=f"rnd_{tag}")
+            
+            final_dia = spec_dia if spec_round == 0 else (math.ceil(spec_dia / spec_round) * spec_round)
+            c3.metric("Final Selection", f"{final_dia} m")
+
+            if st.
