@@ -160,13 +160,17 @@ if type_code == "TH":
                 o_num = s_oflow.split(" | ")[0]
                 u_num = s_uflow.split(" | ")[0]
                 
-                summary_df = pd.DataFrame({
-                    "Property": ["Solids (t/h)", "Volume (m³/h)"],
-                    "Feed": [df_mb.loc[f_num, col_solids], df_mb.loc[f_num, col_slurry_vol]],
-                    "Overflow": [df_mb.loc[o_num, col_solids], df_mb.loc[o_num, col_slurry_vol]],
-                    "Underflow": [df_mb.loc[u_num, col_solids], df_mb.loc[u_num, col_slurry_vol]]
-                })
-                st.table(summary_df)
+          try:
+                    summary_df = pd.DataFrame({
+                        "Property": ["Solids (t/h)", "Volume (m³/h)"],
+                        "Feed": [df_mb.loc[f_num, col_solids], df_mb.loc[f_num, col_slurry_vol]],
+                        "Overflow": [df_mb.loc[o_num, col_solids], df_mb.loc[o_num, col_slurry_vol]],
+                        "Underflow": [df_mb.loc[u_num, col_solids], df_mb.loc[u_num, col_slurry_vol]]
+                    })
+                    st.table(summary_df)
+                except KeyError as e:
+                    st.warning(f"Waiting for stream selection... (Missing key: {e})")
+                    
 
                 if st.button(f"🚀 Size and Save {tag}", key=f"btn_{tag}"):
                     p_data = {
