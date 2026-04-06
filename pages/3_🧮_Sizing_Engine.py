@@ -103,7 +103,7 @@ if type_code == "PU":
 # =====================================================================
 # THICKENER (TH) NUANCED SIZING
 # =====================================================================
-if equip_type_code == "TH":
+if type_code == "TH":
     st.subheader("Unit-by-Unit Thickener Sizing")
     
     df_th = df_equip[df_equip['Type'] == 'TH'].copy()
