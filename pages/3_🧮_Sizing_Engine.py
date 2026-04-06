@@ -104,12 +104,26 @@ if type_code == "TH":
             final_dia = spec_dia if spec_round == 0 else (math.ceil(spec_dia / spec_round) * spec_round)
             c3.metric("Final Selection", f"{final_dia} m")
 
-            if st.button(f"✅ Save {tag}", key=f"save_{tag}"):
-                final_res = thickener_th.calculate(tag, {'solids_tph': base_solids}, {'design_flux': 0.4, 'settling_rate': 3.0, 'round_up_to': spec_round})
-                final_res['critical_dimensions']['Diameter (m)'] = final_dia
+ if st.button(f"✅ Save {tag}", key=f"save_{tag}"):
+                # 1. Run a final baseline calculation to get the MTO/Drive data
+                final_res = thickener_th.calculate(tag, 
+                    {'solids_tph': base_solids, 'overflow_m3h': base_vol}, 
+                    {'design_flux': 0.4, 'settling_rate': 3.0, 'round_up_to': 1.0}
+                )
+                
+                # 2. Safety Check: If the calc failed, create a dummy structure to hold your spec
+                if "critical_dimensions" not in final_res:
+                    final_res["critical_dimensions"] = {}
+                
+                # 3. OVERRIDE with your manual engineering specification
+                final_res['status'] = "Sized"
+                final_res['critical_dimensions']['Diameter (m)'] = float(spec_dia)
                 final_res['scenarios'] = edited_scenarios.to_dict('records')
+                final_res['mapped_feed'] = s_feed
+                
+                # 4. Save to the master equipment list
                 data_manager.save_equipment_sizing(tag, final_res)
-                st.success("Sizing saved.")
+                st.success(f"Final Spec for {tag} saved as {spec_dia}m.")
 
 # =====================================================================
 # PUMP (PU) BULK SIZING
