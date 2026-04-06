@@ -181,12 +181,16 @@ if type_code == "TH":
                     
                     res = thickener_th.calculate(tag, p_data, m_in)
                     
-                    # Persist mapping UI choices
-                    res['mapped_feed'] = s_feed
-                    res['mapped_oflow'] = s_oflow
-                    res['mapped_uflow'] = s_uflow
-                    res['manual_inputs'] = m_in
-                    
-                    data_manager.save_equipment_sizing(tag, res)
-                    st.success(f"Sizing for {tag} committed.")
-                    st.json(res['critical_dimensions'])
+                    # --- ADDED SAFETY CHECK ---
+                    if "Error" in res['status']:
+                        st.error(res['status'])
+                    else:
+                        # Persist mapping UI choices
+                        res['mapped_feed'] = s_feed
+                        res['mapped_oflow'] = s_oflow
+                        res['mapped_uflow'] = s_uflow
+                        res['manual_inputs'] = m_in
+                        
+                        data_manager.save_equipment_sizing(tag, res)
+                        st.success(f"Sizing for {tag} committed.")
+                        st.json(res['critical_dimensions'])
