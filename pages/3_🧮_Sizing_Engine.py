@@ -137,4 +137,37 @@ if equip_type_code == "HP":
                 
                 # Inject UI choices into the result so we can load them next time
                 res['mapped_stream'] = stream
-                res['manual_inputs'] =
+                res['manual_inputs'] = manual_inputs
+                
+                # Save to Data Manager
+                data_manager.save_equipment_sizing(tag, res)
+                results_list.append(res)
+                success_count += 1
+        
+        st.success(f"Successfully sized and saved {success_count} hoppers!")
+        
+        # 6. Show Summary Results Matrix
+        st.subheader("3. Sizing Results Summary")
+        summary_data = []
+        for r in results_list:
+            if "Error" not in r.get("status", ""):
+                summary_data.append({
+                    "Tag": r['tag'],
+                    "Dia/Width (mm)": r['critical_dimensions']['Diameter/Width (mm)'],
+                    "Height (mm)": r['critical_dimensions']['Total Height (mm)'],
+                    "Carbon Steel (kg)": r['mto']['Carbon Steel (kg)'],
+                    "Rubber Lining (m2)": r['mto']['Rubber Lining (m2)']
+                })
+            else:
+                summary_data.append({"Tag": r['tag'], "Dia/Width (mm)": "Error"})
+                
+        st.dataframe(pd.DataFrame(summary_data), hide_index=True, use_container_width=True)
+
+# =====================================================================
+# PUMP / OTHER EQUIPMENT PLACEHOLDERS
+# =====================================================================
+elif equip_type_code == "PU":
+    st.info("🚧 Pump bulk sizing module under development...")
+    # This is where we will add the pump logic next!
+elif equip_type_code == "FL":
+    st.info("🚧 Flotation bulk sizing module under development...")
